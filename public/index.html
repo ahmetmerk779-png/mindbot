@@ -9,14 +9,41 @@
         body { font-family: sans-serif; background: #0f0f17; color: #cdd6f4; padding: 15px; margin: 0; }
         .card { background: #1e1e2e; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #313244; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        #terminal { background: #11111b; height: 260px; overflow-y: auto; padding: 10px; font-family: monospace; border-radius: 5px; }
+        #terminal { background: #11111b; height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; border-radius: 5px; font-size: 13px; }
         input { padding: 8px; background: #313244; border: 1px solid #45475a; color: white; border-radius: 4px; width: 90%; }
         button { padding: 10px 20px; background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         .btn-stop { background: #f38ba8; color: white; margin-left: 10px; }
+        
+        /* 🎥 3D CANLI YAYIN PENCERESİ */
+        .viewer-container {
+            position: relative;
+            width: 100%;
+            height: 380px;
+            background: #11111b;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #89b4fa;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .term-input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .term-input-group input {
+            flex: 1;
+            width: auto;
+        }
     </style>
 </head>
 <body>
     <h2>⚡ MindCraft Ultimate AesirMC / Proxy Paneli</h2>
+    
+    <!-- AYARLAR FORMU -->
     <div class="card">
         <div class="grid">
             <div><label>Sunucu IP:</label><br><input type="text" id="cfgHost" value="oyna.aesirmc.com"></div>
@@ -30,17 +57,38 @@
         <button onclick="startBot()">🚀 Botu Güvenli Başlat</button>
         <button onclick="stopBot()" class="btn-stop">🔴 Durdur</button>
     </div>
+
+    <!-- DURUM ÇUBUĞU -->
     <div class="card">
-        <p>Durum: <b id="status">Kapalı</b> | Can: <b id="hp">20</b> | Konum: <b id="pos">X:0 Y:0 Z:0</b></p>
-        <p>Eylem: <span id="action" style="color:#89b4fa">Pasif Beklemede</span></p>
+        <p>Durum: <b id="status" style="color:#f38ba8">Kapalı</b> | Can: <b id="hp" style="color:#a6e3a1">20</b> | Açlık: <b id="food" style="color:#fab387">20</b> | Konum: <b id="pos" style="color:#89b4fa">X:0 Y:0 Z:0</b></p>
+        <p>Eylem: <span id="action" style="color:#f9e2af">Pasif Beklemede</span></p>
     </div>
+
+    <!-- 🎥 3D CANLI İZLEME EKRANI -->
     <div class="card">
+        <h3>🎥 Canlı 3D WebGL İzleme Ekranı (Real-Time)</h3>
+        <div class="viewer-container">
+            <iframe id="viewerFrame" src="about:blank"></iframe>
+        </div>
+        <p style="font-size: 11px; color: #a6adc8; margin-top: 5px;">
+            💡 <b>İpucu:</b> Dokunmatik ekran üzerinden 360° kamerayı döndürebilir, botun dünyada ne yaptığını canlı görebilirsin.
+        </p>
+    </div>
+
+    <!-- 💬 İNTERAKTİF TERMINAL & CHAT İNPUTU -->
+    <div class="card">
+        <h3>💬 Canlı Konsol Terminali & Chat</h3>
         <div id="terminal"></div>
+        <div class="term-input-group">
+            <input type="text" id="cmdInput" placeholder="Oyuna mesaj veya komut gönder (Örn: /login sifre, /server towny)..." onkeypress="if(event.key==='Enter') sendCmd()">
+            <button onclick="sendCmd()">Gönder</button>
+        </div>
     </div>
+
     <script>
         const socket = io();
 
-        // SAYFA YÜKLENDİĞİNDE KAYITLI BİLGİLERİ OTOMATİK DOLDUR
+        // KAYITLI VERİLERİ OTOMATİK DOLDUR (localStorage)
         document.addEventListener('DOMContentLoaded', () => {
             if(localStorage.getItem('cfgHost')) document.getElementById('cfgHost').value = localStorage.getItem('cfgHost');
             if(localStorage.getItem('cfgPort')) document.getElementById('cfgPort').value = localStorage.getItem('cfgPort');
@@ -62,7 +110,7 @@
                 groqKey: document.getElementById('cfgGroq').value
             };
 
-            // BİLGİLERİ TARAYICI HAFIZASINA (LOCALSTORAGE) KAYDET
+            // VERİLERİ TARAYICIYA KAYDET
             localStorage.setItem('cfgHost', config.host);
             localStorage.setItem('cfgPort', config.port);
             localStorage.setItem('cfgUser', config.username);
@@ -72,17 +120,37 @@
             localStorage.setItem('cfgGroq', config.groqKey);
 
             socket.emit('start_bot_session', config);
+
+            // 3D Akış İframe'ini 3 Saniye Sonra Yükle
+            setTimeout(() => {
+                document.getElementById('viewerFrame').src = window.location.href;
+            }, 3000);
         }
 
-        function stopBot() { socket.emit('stop_bot_session'); }
+        function stopBot() {
+            socket.emit('stop_bot_session');
+            document.getElementById('viewerFrame').src = "about:blank";
+        }
 
+        function sendCmd() {
+            const input = document.getElementById('cmdInput');
+            if (input.value.trim() !== '') {
+                socket.emit('send_chat', input.value.trim());
+                input.value = '';
+            }
+        }
+
+        // CANLI DURUM GÜNCELLEMESİ (1 SANİYEDE BİR)
         socket.on('bot_status', d => {
             document.getElementById('status').innerText = d.connected ? 'Oyunda ✅' : 'Kapalı ❌';
+            document.getElementById('status').style.color = d.connected ? '#a6e3a1' : '#f38ba8';
             document.getElementById('hp').innerText = d.health;
+            document.getElementById('food').innerText = d.food;
             document.getElementById('pos').innerText = d.location;
             document.getElementById('action').innerText = d.action;
         });
 
+        // TERMINAL LOGLARI
         socket.on('log_message', d => {
             const t = document.getElementById('terminal');
             t.innerHTML += `<div>[${d.time}] ${d.text}</div>`;
