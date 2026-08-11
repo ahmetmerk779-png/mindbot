@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const mineflayer = require('mineflayer');
+const { mineflayer: prismarineViewer } = require('prismarine-viewer');
 
 const ProxyHandler = require('./src/core/ProxyHandler');
 const CaptchaAndAuthHandler = require('./src/core/CaptchaAndAuthHandler');
@@ -29,7 +30,40 @@ function log(text, type = 'info') {
     io.emit('log_message', { text, type, time: new Date().toLocaleTimeString() });
 }
 
+// 🌐 1 SANİYELİK CANLI DURUM YAYINI (Web Paneli İçin)
+setInterval(() => {
+    if (bot && bot.entity) {
+        const pos = bot.entity.position;
+        io.emit('bot_status', {
+            connected: true,
+            health: bot.health || 20,
+            food: bot.food || 20,
+            location: `X:${Math.floor(pos.x)} Y:${Math.floor(pos.y)} Z:${Math.floor(pos.z)}`,
+            action: currentActionText
+        });
+    } else {
+        io.emit('bot_status', {
+            connected: false,
+            health: 0,
+            food: 0,
+            location: 'X:0 Y:0 Z:0',
+            action: 'Kapalı / Bağlı Değil'
+        });
+    }
+}, 1000);
+
 io.on('connection', (socket) => {
+
+    // WEB TERMINALINDEN OYUNA MESAJ/KOMUT GÖNDERME
+    socket.on('send_chat', (msg) => {
+        if (bot) {
+            bot.chat(msg);
+            log(`💬 [WEB TERMINAL -> OYUN]: ${msg}`, "info");
+        } else {
+            log("❌ Bot oyunda değil, komut gönderilemedi!", "error");
+        }
+    });
+
     socket.on('start_bot_session', (config) => {
         if (bot) return log("Bot zaten aktif!", "error");
 
@@ -42,6 +76,11 @@ io.on('connection', (socket) => {
             version: config.version || '1.21.11'
         });
 
+        // Sohbet Mesajlarını Terminale Yazdır
+        bot.on('message', (jsonMsg) => {
+            log(jsonMsg.toString());
+        });
+
         captchaAuth = new CaptchaAndAuthHandler(bot, { password: config.password, subServer: config.subServer });
         captchaAuth.init();
 
@@ -50,6 +89,18 @@ io.on('connection', (socket) => {
 
         bot.once('spawn', () => {
             log("✅ Sunucuya Girildi! Tüm Modüller Aktif.", "info");
+
+            // 🎥 3D CANLI YAYIN MOTORU (WebGL)
+            try {
+                prismarineViewer(bot, {
+                    server: server,
+                    firstPerson: false, // 3. Şahıs Serbest Kamera
+                    viewDistance: 3      // RAM tasarruflu görüş alanı
+                });
+                log("🎥 [3D CANLI YAYIN]: 3D İzleme Ekranı Aktifleştirildi!", "info");
+            } catch (err) {
+                log(`3D Yayın Başlatılamadı: ${err.message}`, "error");
+            }
 
             nav = new AdvancedPathfinder(bot);
             nav.init();
@@ -110,7 +161,10 @@ io.on('connection', (socket) => {
         });
 
         bot.on('error', err => log(`Hata: ${err.message}`, 'error'));
-        bot.on('end', () => log("Bağlantı kesildi.", "error"));
+        bot.on('end', () => {
+            log("Bağlantı kesildi.", "error");
+            bot = null;
+        });
     });
 
     socket.on('stop_bot_session', () => {
