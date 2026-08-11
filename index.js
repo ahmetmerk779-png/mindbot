@@ -4,13 +4,18 @@ const { Server } = require('socket.io');
 const path = require('path');
 const mineflayer = require('mineflayer');
 
+// TÜM BECERİ MODÜLLERİ
 const { setupPathfinder, initMovements, goToLocation } = require('./src/skills/movement');
+const { setupCombat, followTarget, attackTarget, stopCombat } = require('./src/skills/combat');
+const { autoFarm } = require('./src/skills/farming');
+const { startFishing } = require('./src/skills/fishing');
 const { autoCraft } = require('./src/skills/crafting');
 const { getWorldState } = require('./src/perception');
 const { decideNextAction } = require('./src/brain');
+const memory = require('./src/memory');
 
-process.on('unhandledRejection', (reason) => console.error('Hata Yakalandı:', reason));
-process.on('uncaughtException', (err) => console.error('İstisna Yakalandı:', err));
+process.on('unhandledRejection', (r) => console.error('Hata:', r));
+process.on('uncaughtException', (e) => console.error('İstisna:', e));
 
 const app = express();
 const server = http.createServer(app);
@@ -20,11 +25,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let bot = null;
 let aiLoopInterval = null;
-let currentActionText = "Form doldurulup başlatılmayı bekliyor...";
+let currentActionText = "Başlatılmayı bekliyor...";
 
 function sendLog(text, type = 'info') {
-    const time = new Date().toLocaleTimeString();
-    io.emit('log_message', { text, type, time });
+    io.emit('log_message', { text, type, time: new Date().toLocaleTimeString() });
 }
 
 io.on('connection', (socket) => {
@@ -39,47 +43,36 @@ io.on('connection', (socket) => {
                 action: currentActionText
             });
         } else {
-            socket.emit('bot_status', {
-                connected: false,
-                health: 0,
-                food: 0,
-                location: 'X: 0, Y: 0, Z: 0',
-                action: currentActionText
-            });
+            socket.emit('bot_status', { connected: false, health: 0, food: 0, location: 'X:0 Y:0 Z:0', action: currentActionText });
         }
     }, 1000);
 
     socket.on('start_bot_session', (config) => {
-        if (bot) {
-            sendLog("Zaten çalışan bir bot var! Önce kapatın.", "error");
-            return;
-        }
+        if (bot) return sendLog("Zaten çalışan bir bot var!", "error");
 
-        sendLog(`Bot başlatılıyor... (${config.host}:${config.port})`, "info");
+        sendLog(`Bot Başlatılıyor (${config.host})...`, "info");
         currentActionText = "Sunucuya bağlanılıyor...";
 
         try {
             bot = mineflayer.createBot({
                 host: config.host,
                 port: parseInt(config.port) || 25565,
-                username: config.username || 'MindCraft_Bot',
+                username: config.username || 'MindCraft_AI',
                 version: config.version || '1.21.11',
                 viewDistance: 'tiny',
                 physicsEnabled: true
             });
 
             setupPathfinder(bot);
+            setupCombat(bot); // PvP Modülünü Yükle
 
             bot.once('spawn', async () => {
                 initMovements(bot);
+                sendLog("✅ Bot Oyuna Girdi!", "info");
 
-                sendLog("✅ Bot oyuna girdi!", "info");
-                currentActionText = "Yapay zeka döngüsü başlatılıyor...";
+                let currentGoal = "Etrafı keşfet, çiftçilik veya balıkçılık yap, biri saldırırsa savaş!";
 
-                let currentGoal = "Etrafta dolaş, oyuncularla konuş ve eşya üret.";
-                let lastAction = "Oyuna katıldı.";
-
-                // OTONOM DÖNGÜ (EYLEM YÖNETİCİSİ)
+                // OTONOM YAPAY ZEKA DÖNGÜSÜ
                 aiLoopInterval = setInterval(async () => {
                     if (!bot || !bot.entity) return;
 
@@ -87,26 +80,49 @@ io.on('connection', (socket) => {
                         const state = getWorldState(bot);
                         if (!state) return;
 
-                        // AI Karar Alıyor
-                        const decision = await decideNextAction(state, currentGoal, lastAction, config.groqKey);
+                        // Yapay Zeka Karar Alıyor (CoT + Hafıza)
+                        const decision = await decideNextAction(state, currentGoal, config.groqKey);
                         currentActionText = decision.thought;
-                        lastAction = decision.thought;
-                        sendLog(`AI Kararı: ${decision.thought}`, 'info');
+                        sendLog(`🧠 Düşünce: ${decision.reasoning}`, 'info');
 
-                        // 1. HAREKET EYLEMİ
-                        if (decision.action === 'MOVE' && decision.params.x) {
-                            const { x, y, z } = decision.params;
-                            sendLog(`Yürünüyor -> X:${x} Y:${y} Z:${z}`, 'info');
-                            await goToLocation(bot, x, y, z);
-                        } 
-                        // 2. KONUŞMA EYLEMİ
-                        else if (decision.action === 'TALK' && decision.params.message) {
-                            bot.chat(decision.params.message);
+                        // Eğer bot chate bir şey yazmak istediyse
+                        if (decision.chat_response) {
+                            bot.chat(decision.chat_response);
                         }
-                        // 3. CRAFTING EYLEMİ
-                        else if (decision.action === 'CRAFT' && decision.params.item_name) {
-                            const res = await autoCraft(bot, decision.params.item_name, decision.params.count || 1);
-                            sendLog(`Craft Sonucu: ${res.message}`, res.success ? 'info' : 'error');
+
+                        let result = { success: true, message: 'Beklendi.' };
+
+                        // BECERİ YÖNETİCİSİ (EXECUTION)
+                        switch (decision.action) {
+                            case 'MOVE':
+                                if (decision.params.x) result = await goToLocation(bot, decision.params.x, decision.params.y, decision.params.z);
+                                break;
+                            case 'FOLLOW':
+                                if (decision.params.target_name) result = followTarget(bot, decision.params.target_name);
+                                break;
+                            case 'ATTACK':
+                                if (decision.params.target_name) result = await attackTarget(bot, decision.params.target_name);
+                                break;
+                            case 'FARM':
+                                result = await autoFarm(bot);
+                                break;
+                            case 'FISH':
+                                result = await startFishing(bot);
+                                break;
+                            case 'CRAFT':
+                                if (decision.params.item_name) result = await autoCraft(bot, decision.params.item_name, decision.params.count);
+                                break;
+                            case 'TALK':
+                                if (decision.params.message) bot.chat(decision.params.message);
+                                break;
+                        }
+
+                        // HAFIZAYA VE KENDİ KENDİNE ÖĞRENMEYE KAYDET
+                        if (result.success) {
+                            memory.addHistory(decision.action, result.message);
+                        } else {
+                            memory.addFailure(decision.action, result.message);
+                            sendLog(`⚠️ Öğrenme Notu (Başarısızlık): ${result.message}`, 'error');
                         }
 
                     } catch (err) {
@@ -115,47 +131,40 @@ io.on('connection', (socket) => {
                 }, 8000);
             });
 
+            // Saldırıya Uğradığında Otomatik Savunma (Öğrenilmiş Beceri)
+            bot.on('entityHurt', (entity) => {
+                if (entity === bot.entity) {
+                    sendLog("⚠️ Bot Hasar Aldı! Savaş modu tetiklendi.", "error");
+                    const attacker = bot.nearestEntity(e => e.type === 'mob' || e.type === 'player');
+                    if (attacker) attackTarget(bot, attacker.name || 'Saldırgan');
+                }
+            });
+
             bot.on('chat', (username, message) => {
                 if (username === bot.username) return;
                 sendLog(`<${username}> ${message}`, 'chat');
             });
 
-            bot.on('error', err => sendLog(`Bot Hatası: ${err.message}`, 'error'));
-            bot.on('kicked', reason => {
-                sendLog(`Bot Sunucudan Atıldı: ${reason}`, 'error');
-                stopBotSession();
-            });
-            bot.on('end', () => {
-                sendLog("Bot bağlantısı kesildi.", "error");
-                stopBotSession();
-            });
+            bot.on('error', err => sendLog(`Hata: ${err.message}`, 'error'));
+            bot.on('kicked', r => { sendLog(`Atıldı: ${r}`, 'error'); stopBotSession(); });
+            bot.on('end', () => stopBotSession());
 
-        } catch (err) {
-            sendLog(`Başlatma Hatası: ${err.message}`, 'error');
-        }
+        } catch (err) { sendLog(`Başlatma Hatası: ${err.message}`, 'error'); }
     });
 
     socket.on('stop_bot_session', () => stopBotSession());
-
     socket.on('send_command', (msg) => {
-        if (bot) {
-            bot.chat(msg);
-            sendLog(`[Panelden Gönderildi]: ${msg}`, 'chat');
-        }
+        if (bot) { bot.chat(msg); sendLog(`[Panel]: ${msg}`, 'chat'); }
     });
-
     socket.on('disconnect', () => clearInterval(statusTicker));
 });
 
 function stopBotSession() {
     if (aiLoopInterval) clearInterval(aiLoopInterval);
-    if (bot) {
-        bot.quit();
-        bot = null;
-    }
-    currentActionText = "Bot durduruldu.";
-    sendLog("Bot oturumu tamamen kapatıldı.", "info");
+    if (bot) { stopCombat(bot); bot.quit(); bot = null; }
+    currentActionText = "Durduruldu.";
+    sendLog("Oturum kapatıldı.", "info");
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🚀 Web Paneli Aktif: ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 MindCraft AI Motoru Aktif: ${PORT}`));
