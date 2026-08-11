@@ -9,12 +9,12 @@
         body { font-family: sans-serif; background: #0f0f17; color: #cdd6f4; padding: 15px; margin: 0; }
         .card { background: #1e1e2e; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #313244; }
         .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        #terminal { background: #11111b; height: 200px; overflow-y: auto; padding: 10px; font-family: monospace; border-radius: 5px; font-size: 13px; }
+        #terminal { background: #11111b; height: 180px; overflow-y: auto; padding: 10px; font-family: monospace; border-radius: 5px; font-size: 13px; }
         input { padding: 8px; background: #313244; border: 1px solid #45475a; color: white; border-radius: 4px; width: 90%; }
         button { padding: 10px 20px; background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         .btn-stop { background: #f38ba8; color: white; margin-left: 10px; }
         
-        /* 🎥 3D CANLI YAYIN PENCERESİ */
+        /* 🎥 ÇALIŞAN 3D CANLI YAYIN PENCERESİ */
         .viewer-container {
             position: relative;
             width: 100%;
@@ -64,23 +64,20 @@
         <p>Eylem: <span id="action" style="color:#f9e2af">Pasif Beklemede</span></p>
     </div>
 
-    <!-- 🎥 3D CANLI İZLEME EKRANI -->
+    <!-- 🎥 DÜZELTİLMİŞ 3D CANLI İZLEME EKRANI -->
     <div class="card">
         <h3>🎥 Canlı 3D WebGL İzleme Ekranı (Real-Time)</h3>
         <div class="viewer-container">
             <iframe id="viewerFrame" src="about:blank"></iframe>
         </div>
-        <p style="font-size: 11px; color: #a6adc8; margin-top: 5px;">
-            💡 <b>İpucu:</b> Dokunmatik ekran üzerinden 360° kamerayı döndürebilir, botun dünyada ne yaptığını canlı görebilirsin.
-        </p>
     </div>
 
-    <!-- 💬 İNTERAKTİF TERMINAL & CHAT İNPUTU -->
+    <!-- 💬 İNTERAKTİF TERMINAL -->
     <div class="card">
-        <h3>💬 Canlı Konsol Terminali & Chat</h3>
+        <h3>💬 Canlı Konsol Terminali & Komut Gönderici</h3>
         <div id="terminal"></div>
         <div class="term-input-group">
-            <input type="text" id="cmdInput" placeholder="Oyuna mesaj veya komut gönder (Örn: /login sifre, /server towny)..." onkeypress="if(event.key==='Enter') sendCmd()">
+            <input type="text" id="cmdInput" placeholder="Oyuna komut veya mesaj yaz (Örn: gel, takip et, dur, /server towny)..." onkeypress="if(event.key==='Enter') sendCmd()">
             <button onclick="sendCmd()">Gönder</button>
         </div>
     </div>
@@ -88,7 +85,7 @@
     <script>
         const socket = io();
 
-        // KAYITLI VERİLERİ OTOMATİK DOLDUR (localStorage)
+        // KAYITLI VERİLERİ DOLDUR
         document.addEventListener('DOMContentLoaded', () => {
             if(localStorage.getItem('cfgHost')) document.getElementById('cfgHost').value = localStorage.getItem('cfgHost');
             if(localStorage.getItem('cfgPort')) document.getElementById('cfgPort').value = localStorage.getItem('cfgPort');
@@ -110,7 +107,6 @@
                 groqKey: document.getElementById('cfgGroq').value
             };
 
-            // VERİLERİ TARAYICIYA KAYDET
             localStorage.setItem('cfgHost', config.host);
             localStorage.setItem('cfgPort', config.port);
             localStorage.setItem('cfgUser', config.username);
@@ -121,9 +117,9 @@
 
             socket.emit('start_bot_session', config);
 
-            // 3D Akış İframe'ini 3 Saniye Sonra Yükle
+            // DÜZELTME: /view3d özel rotası yükleniyor (Sonsuz döngü engellendi)
             setTimeout(() => {
-                document.getElementById('viewerFrame').src = window.location.href;
+                document.getElementById('viewerFrame').src = '/view3d';
             }, 3000);
         }
 
@@ -140,7 +136,6 @@
             }
         }
 
-        // CANLI DURUM GÜNCELLEMESİ (1 SANİYEDE BİR)
         socket.on('bot_status', d => {
             document.getElementById('status').innerText = d.connected ? 'Oyunda ✅' : 'Kapalı ❌';
             document.getElementById('status').style.color = d.connected ? '#a6e3a1' : '#f38ba8';
@@ -150,7 +145,6 @@
             document.getElementById('action').innerText = d.action;
         });
 
-        // TERMINAL LOGLARI
         socket.on('log_message', d => {
             const t = document.getElementById('terminal');
             t.innerHTML += `<div>[${d.time}] ${d.text}</div>`;
