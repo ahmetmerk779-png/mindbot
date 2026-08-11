@@ -2,111 +2,65 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MindCraft Bot Kontrol Paneli</title>
+    <title>MindCraft Ultimate Kontrol Paneli</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { font-family: sans-serif; background: #11111b; color: #cdd6f4; padding: 15px; margin: 0; }
-        .card { background: #1e1e2e; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-        .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-        #terminal { background: #181825; height: 220px; overflow-y: auto; padding: 10px; font-family: monospace; border-radius: 5px; }
-        .log-chat { color: #a6e3a1; } .log-info { color: #89b4fa; } .log-err { color: #f38ba8; }
+        body { font-family: sans-serif; background: #0f0f17; color: #cdd6f4; padding: 15px; margin: 0; }
+        .card { background: #1e1e2e; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #313244; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        #terminal { background: #11111b; height: 260px; overflow-y: auto; padding: 10px; font-family: monospace; border-radius: 5px; }
         input { padding: 8px; background: #313244; border: 1px solid #45475a; color: white; border-radius: 4px; width: 90%; }
         button { padding: 10px 20px; background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
-        button:hover { background: #94e2d5; }
         .btn-stop { background: #f38ba8; color: white; margin-left: 10px; }
     </style>
 </head>
 <body>
-    <h2>🤖 MindCraft Bot Yönetim Paneli</h2>
-
-    <!-- BAĞLANTI FORMU -->
-    <div class="card" id="setupCard">
-        <h3 style="margin-top:0; color:#89b4fa;">⚙️ Sunucu & Bot Ayarları</h3>
-        <div class="grid-form">
-            <div>
-                <label>Sunucu IP (Host):</label><br>
-                <input type="text" id="cfgHost" placeholder="mc.sunucu.com">
-            </div>
-            <div>
-                <label>Port:</label><br>
-                <input type="number" id="cfgPort" value="25565">
-            </div>
-            <div>
-                <label>Bot Adı (Username):</label><br>
-                <input type="text" id="cfgUser" value="MindCraft_AI">
-            </div>
-            <div>
-                <label>MC Sürümü:</label><br>
-                <input type="text" id="cfgVer" value="1.21.11">
-            </div>
-        </div>
-        <div style="margin-bottom: 15px;">
-            <label>Groq API Key:</label><br>
-            <input type="password" id="cfgGroq" placeholder="gsk_..." style="width: 95%;">
-        </div>
-        <button onclick="startBot()">🚀 Botu Sunucuya Bağla</button>
-        <button onclick="stopBot()" class="btn-stop">🔴 Botu Çıkart</button>
-    </div>
-
-    <!-- DURUM EKRANI -->
+    <h2>⚡ MindCraft Ultimate AesirMC / Proxy Paneli</h2>
     <div class="card">
-        <p>Durum: <b id="status" style="color:#f9e2af">Beklemede (Formu Doldurun)</b> | Can: <b id="hp">20</b> | Açlık: <b id="food">20</b></p>
-        <p>Konum: <b id="pos">X:0, Y:0, Z:0</b></p>
-        <p>Gelişmiş Eylem: <span id="action" style="color:#89b4fa">Henüz Başlatılmadı</span></p>
+        <div class="grid">
+            <div><label>Sunucu IP:</label><br><input type="text" id="cfgHost" value="play.aesirmc.com"></div>
+            <div><label>Port:</label><br><input type="number" id="cfgPort" value="25565"></div>
+            <div><label>Bot Adı:</label><br><input type="text" id="cfgUser" value="UltraAjan"></div>
+            <div><label>Şifre (Oto-Login):</label><br><input type="password" id="cfgPass" placeholder="Şifreniz"></div>
+            <div><label>Senin Oyundaki Adın (Master):</label><br><input type="text" id="cfgMaster" placeholder="Master Kullanıcı Adın"></div>
+            <div><label>Hedef Sunucu:</label><br><input type="text" id="cfgSub" value="boxpvp"></div>
+        </div><br>
+        <div><label>Groq API Key (Doğal Dil):</label><br><input type="password" id="cfgGroq" placeholder="gsk_..." style="width: 95%;"></div><br>
+        <button onclick="startBot()">🚀 Botu Güvenli Başlat</button>
+        <button onclick="stopBot()" class="btn-stop">🔴 Durdur</button>
     </div>
-
-    <!-- TERMINAL -->
     <div class="card">
-        <div id="terminal"></div><br>
-        <input type="text" id="cmd" placeholder="Minecraft sohbetine mesaj gönder..." style="width: 75%;">
-        <button onclick="send()">Gönder</button>
+        <p>Durum: <b id="status">Kapalı</b> | Can: <b id="hp">20</b> | Konum: <b id="pos">X:0 Y:0 Z:0</b></p>
+        <p>Eylem: <span id="action" style="color:#89b4fa">Pasif Beklemede</span></p>
     </div>
-
+    <div class="card">
+        <div id="terminal"></div>
+    </div>
     <script>
         const socket = io();
-
         function startBot() {
-            const config = {
+            socket.emit('start_bot_session', {
                 host: document.getElementById('cfgHost').value,
                 port: document.getElementById('cfgPort').value,
                 username: document.getElementById('cfgUser').value,
-                version: document.getElementById('cfgVer').value,
+                password: document.getElementById('cfgPass').value,
+                masterUser: document.getElementById('cfgMaster').value,
+                subServer: document.getElementById('cfgSub').value,
                 groqKey: document.getElementById('cfgGroq').value
-            };
-
-            if (!config.host || !config.groqKey) {
-                alert("Lütfen Sunucu IP ve Groq API Key alanlarını doldurun!");
-                return;
-            }
-
-            socket.emit('start_bot_session', config);
-            document.getElementById('status').innerText = "Bağlanılıyor...";
+            });
         }
-
-        function stopBot() {
-            socket.emit('stop_bot_session');
-        }
-
+        function stopBot() { socket.emit('stop_bot_session'); }
         socket.on('bot_status', d => {
-            document.getElementById('status').innerText = d.connected ? 'Oyunda ✅' : 'Koptu / Kapalı ❌';
+            document.getElementById('status').innerText = d.connected ? 'Oyunda ✅' : 'Kapalı ❌';
             document.getElementById('hp').innerText = d.health;
-            document.getElementById('food').innerText = d.food;
             document.getElementById('pos').innerText = d.location;
             document.getElementById('action').innerText = d.action;
         });
-
         socket.on('log_message', d => {
-            const term = document.getElementById('terminal');
-            const css = d.type === 'chat' ? 'log-chat' : (d.type === 'error' ? 'log-err' : 'log-info');
-            term.innerHTML += `<div class="${css}">[${d.time}] ${d.text}</div>`;
-            term.scrollTop = term.scrollHeight;
+            const t = document.getElementById('terminal');
+            t.innerHTML += `<div>[${d.time}] ${d.text}</div>`;
+            t.scrollTop = t.scrollHeight;
         });
-
-        function send() {
-            const i = document.getElementById('cmd');
-            if(i.value) { socket.emit('send_command', i.value); i.value = ''; }
-        }
     </script>
 </body>
-  </html>
+        </html>
