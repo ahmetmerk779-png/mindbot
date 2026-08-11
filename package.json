@@ -1,0 +1,16 @@
+{
+  "name": "mindcraft-render-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "NODE_OPTIONS=\"--max-old-space-size=380\" node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "groq-sdk": "^0.5.0",
+    "minecraft-data": "^3.66.0",
+    "mineflayer": "^4.20.1",
+    "mineflayer-pathfinder": "^2.4.5",
+    "socket.io": "^4.7.5"
+  }
+}
