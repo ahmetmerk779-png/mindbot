@@ -1,39 +1,44 @@
 const Groq = require('groq-sdk');
+const memory = require('./memory');
 
-async function decideNextAction(worldState, currentGoal, lastAction, apiKey) {
+async function decideNextAction(worldState, currentGoal, apiKey) {
     const cleanKey = apiKey ? apiKey.trim() : null;
-
     if (!cleanKey || !cleanKey.startsWith('gsk_')) {
-        return { thought: "Geçersiz veya eksik Groq API Key!", action: "WAIT", params: {} };
+        return { thought: "Groq Key eksik!", action: "WAIT", params: {} };
     }
 
-    // Zaman aşımı (timeout) eklenerek kilitlenme engellendi
-    const groq = new Groq({ 
-        apiKey: cleanKey,
-        timeout: 10000 
-    });
+    const groq = new Groq({ apiKey: cleanKey, timeout: 12000 });
+    const memContext = memory.getMemoryContext();
 
     const prompt = `
-Sen Minecraft'ta oynayan otonom bir botsun.
-Mevcut Durumun:
-- Konum: ${worldState.location}
-- Can: ${worldState.health}/20, Açlık: ${worldState.food}/20
-- Envanter: ${worldState.inventory}
-- Yakındakiler: ${worldState.nearby}
+Sen Minecraft'ın en akıllı ve insansı otonom yapay zeka botusun (MindCraft).
+[DURUMUM]:
+- Konum: ${worldState.location} | Can: ${worldState.health}/20 | Açlık: ${worldState.food}/20
+- Envanter: ${worldState.inventory} | Yakındakiler: ${worldState.nearby}
 
-Ana Hedefin: ${currentGoal}
-Son Eylemin: ${lastAction}
+[HAFIZA & KENDİ KENDİNE ÖĞRENME]:
+- Geçmiş Eylemler: ${memContext.history}
+- Başarısızlıklar/Dersler: ${memContext.failures}
 
-SADECE geçerli bir JSON yanıtı ver:
+[ANA HEDEF]: ${currentGoal}
+
+[YAPABİLECEĞİN EYLEMLER]:
+- "MOVE" -> params: { x, y, z }
+- "FOLLOW" -> params: { target_name }
+- "ATTACK" -> params: { target_name }
+- "FARM" -> params: {}
+- "FISH" -> params: {}
+- "CRAFT" -> params: { item_name, count }
+- "TALK" -> params: { message } (Oyuncularla insansı derin sohbetler et)
+- "WAIT" -> params: {}
+
+SADECE geçerli bir JSON ver:
 {
-  "thought": "Düşüncen ve yapacağın hamlenin kısa açıklaması",
-  "action": "MOVE" | "TALK" | "CRAFT" | "WAIT",
-  "params": {
-     "x": ${worldState.rawPos.x}, "y": ${worldState.rawPos.y}, "z": ${worldState.rawPos.z},
-     "message": "mesaj",
-     "item_name": "oak_planks",
-     "count": 1
-  }
+  "reasoning": "Adım adım mantık yürütmen (Chain of Thought)",
+  "chat_response": "Gerekiyorsa chate yazacağın akıllıca/esprili yanıt (boş bırakılabilir)",
+  "thought": "Kısa panel açıklaması",
+  "action": "MOVE" | "FOLLOW" | "ATTACK" | "FARM" | "FISH" | "CRAFT" | "TALK" | "WAIT",
+  "params": {}
 }`;
 
     try {
@@ -45,8 +50,7 @@ SADECE geçerli bir JSON yanıtı ver:
 
         return JSON.parse(response.choices[0].message.content);
     } catch (err) {
-        console.error("Groq API Hatası:", err.message);
-        return { thought: `Groq Hatası (${err.message}) - Yeniden deneniyor...`, action: "WAIT", params: {} };
+        return { thought: `Groq Hatası: ${err.message}`, action: "WAIT", params: {} };
     }
 }
 
