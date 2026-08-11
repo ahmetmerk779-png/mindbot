@@ -25,11 +25,18 @@ class AdvancedPathfinder {
         const buildBlocks = ['cobblestone', 'dirt', 'stone', 'oak_planks'];
         this.movements.scafoldingBlocks = buildBlocks.map(name => mcData.blocksByName[name]?.id).filter(Boolean);
 
-        // Tehlikeli bloklar
+        // HATA DÜZELTİLDİ: Set objesi güvenli şekilde başlatılıyor
+        if (!this.movements.cantBreak) {
+            this.movements.cantBreak = new Set();
+        }
+
+        // Tehlikeli blokları kesinlikle kırmama ve basmama listesine ekle
         this.movements.liquidsCost = 8;
         ['lava', 'fire', 'sweet_berry_bush', 'magma_block'].forEach(name => {
             const b = mcData.blocksByName[name];
-            if (b) this.movements.cantBreak.add(b.id);
+            if (b && this.movements.cantBreak) {
+                this.movements.cantBreak.add(b.id);
+            }
         });
 
         this.bot.pathfinder.setMovements(this.movements);
