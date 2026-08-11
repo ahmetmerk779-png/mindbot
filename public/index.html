@@ -2,6 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MindCraft Ultimate Kontrol Paneli</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
@@ -18,12 +19,12 @@
     <h2>⚡ MindCraft Ultimate AesirMC / Proxy Paneli</h2>
     <div class="card">
         <div class="grid">
-            <div><label>Sunucu IP:</label><br><input type="text" id="cfgHost" value="play.aesirmc.com"></div>
+            <div><label>Sunucu IP:</label><br><input type="text" id="cfgHost" value="oyna.aesirmc.com"></div>
             <div><label>Port:</label><br><input type="number" id="cfgPort" value="25565"></div>
-            <div><label>Bot Adı:</label><br><input type="text" id="cfgUser" value="UltraAjan"></div>
+            <div><label>Bot Adı:</label><br><input type="text" id="cfgUser" value="banyedin"></div>
             <div><label>Şifre (Oto-Login):</label><br><input type="password" id="cfgPass" placeholder="Şifreniz"></div>
-            <div><label>Senin Oyundaki Adın (Master):</label><br><input type="text" id="cfgMaster" placeholder="Master Kullanıcı Adın"></div>
-            <div><label>Hedef Sunucu:</label><br><input type="text" id="cfgSub" value="boxpvp"></div>
+            <div><label>Senin Oyundaki Adın (Master):</label><br><input type="text" id="cfgMaster" placeholder="Master Oyuncu Adın"></div>
+            <div><label>Hedef Sunucu:</label><br><input type="text" id="cfgSub" value="Towny"></div>
         </div><br>
         <div><label>Groq API Key (Doğal Dil):</label><br><input type="password" id="cfgGroq" placeholder="gsk_..." style="width: 95%;"></div><br>
         <button onclick="startBot()">🚀 Botu Güvenli Başlat</button>
@@ -38,8 +39,20 @@
     </div>
     <script>
         const socket = io();
+
+        // SAYFA YÜKLENDİĞİNDE KAYITLI BİLGİLERİ OTOMATİK DOLDUR
+        document.addEventListener('DOMContentLoaded', () => {
+            if(localStorage.getItem('cfgHost')) document.getElementById('cfgHost').value = localStorage.getItem('cfgHost');
+            if(localStorage.getItem('cfgPort')) document.getElementById('cfgPort').value = localStorage.getItem('cfgPort');
+            if(localStorage.getItem('cfgUser')) document.getElementById('cfgUser').value = localStorage.getItem('cfgUser');
+            if(localStorage.getItem('cfgPass')) document.getElementById('cfgPass').value = localStorage.getItem('cfgPass');
+            if(localStorage.getItem('cfgMaster')) document.getElementById('cfgMaster').value = localStorage.getItem('cfgMaster');
+            if(localStorage.getItem('cfgSub')) document.getElementById('cfgSub').value = localStorage.getItem('cfgSub');
+            if(localStorage.getItem('cfgGroq')) document.getElementById('cfgGroq').value = localStorage.getItem('cfgGroq');
+        });
+
         function startBot() {
-            socket.emit('start_bot_session', {
+            const config = {
                 host: document.getElementById('cfgHost').value,
                 port: document.getElementById('cfgPort').value,
                 username: document.getElementById('cfgUser').value,
@@ -47,15 +60,29 @@
                 masterUser: document.getElementById('cfgMaster').value,
                 subServer: document.getElementById('cfgSub').value,
                 groqKey: document.getElementById('cfgGroq').value
-            });
+            };
+
+            // BİLGİLERİ TARAYICI HAFIZASINA (LOCALSTORAGE) KAYDET
+            localStorage.setItem('cfgHost', config.host);
+            localStorage.setItem('cfgPort', config.port);
+            localStorage.setItem('cfgUser', config.username);
+            localStorage.setItem('cfgPass', config.password);
+            localStorage.setItem('cfgMaster', config.masterUser);
+            localStorage.setItem('cfgSub', config.subServer);
+            localStorage.setItem('cfgGroq', config.groqKey);
+
+            socket.emit('start_bot_session', config);
         }
+
         function stopBot() { socket.emit('stop_bot_session'); }
+
         socket.on('bot_status', d => {
             document.getElementById('status').innerText = d.connected ? 'Oyunda ✅' : 'Kapalı ❌';
             document.getElementById('hp').innerText = d.health;
             document.getElementById('pos').innerText = d.location;
             document.getElementById('action').innerText = d.action;
         });
+
         socket.on('log_message', d => {
             const t = document.getElementById('terminal');
             t.innerHTML += `<div>[${d.time}] ${d.text}</div>`;
@@ -63,4 +90,4 @@
         });
     </script>
 </body>
-        </html>
+</html>
