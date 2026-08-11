@@ -4,11 +4,11 @@ const { Server } = require('socket.io');
 const path = require('path');
 const mineflayer = require('mineflayer');
 
-const { setupPathfinder, goToLocation } = require('./src/skills/movement');
+// DÜZELTME: initMovements eklendi
+const { setupPathfinder, initMovements, goToLocation } = require('./src/skills/movement');
 const { getWorldState } = require('./src/perception');
 const { decideNextAction } = require('./src/brain');
 
-// ÇÖKMEYİ ÖNLEYİCİ CATCH-ALL HATA YAKALAYICILAR
 process.on('unhandledRejection', (reason) => console.error('Hata Yakalandı:', reason));
 process.on('uncaughtException', (err) => console.error('İstisna Yakalandı:', err));
 
@@ -27,10 +27,8 @@ function sendLog(text, type = 'info') {
     io.emit('log_message', { text, type, time });
 }
 
-// SOCKET.IO PANEL YÖNETİMİ
 io.on('connection', (socket) => {
 
-    // Saniyede bir panel ekranını güncelle
     const statusTicker = setInterval(() => {
         if (bot && bot.entity) {
             socket.emit('bot_status', {
@@ -51,7 +49,6 @@ io.on('connection', (socket) => {
         }
     }, 1000);
 
-    // Panelden "Botu Bağla" Butonuna Basıldığında
     socket.on('start_bot_session', (config) => {
         if (bot) {
             sendLog("Zaten çalışan bir bot var! Önce onu kapatın.", "error");
@@ -71,16 +68,19 @@ io.on('connection', (socket) => {
                 physicsEnabled: true
             });
 
+            // Pathfinder eklentisini bağla
             setupPathfinder(bot);
 
             bot.once('spawn', async () => {
+                // DÜZELTME: Hareket haritası bot tam doğunca yüklenir
+                initMovements(bot);
+
                 sendLog("✅ Bot başarıyla oyuna girdi!", "info");
                 currentActionText = "Otonom yapay zeka döngüsü başlatılıyor...";
 
                 let currentGoal = "Etrafta dolaş, oyuncuları gözlemle ve chate selam ver.";
                 let lastAction = "Oyuna katıldı.";
 
-                // OTONOM DÖNGÜ
                 aiLoopInterval = setInterval(async () => {
                     if (!bot || !bot.entity) return;
 
@@ -102,7 +102,7 @@ io.on('connection', (socket) => {
                     } catch (err) {
                         sendLog(`Döngü Hatası: ${err.message}`, 'error');
                     }
-                }, 8000); // 8 saniyede bir karar al
+                }, 8000);
             });
 
             bot.on('chat', (username, message) => {
@@ -125,12 +125,10 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Panelden "Botu Çıkart" Butonuna Basıldığında
     socket.on('stop_bot_session', () => {
         stopBotSession();
     });
 
-    // Panelden Sohbet Mesajı Gönderildiğinde
     socket.on('send_command', (msg) => {
         if (bot) {
             bot.chat(msg);
@@ -153,7 +151,6 @@ function stopBotSession() {
     sendLog("Bot oturumu tamamen kapatıldı.", "info");
 }
 
-// WEB SUNUCUSUNU BAŞLAT (Render Portu)
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`🚀 Web Paneli Aktif: http://localhost:${PORT}`);
