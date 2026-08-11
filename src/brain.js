@@ -1,11 +1,17 @@
 const Groq = require('groq-sdk');
 
 async function decideNextAction(worldState, currentGoal, lastAction, apiKey) {
-    if (!apiKey) {
-        return { thought: "Groq API Key girilmedi!", action: "WAIT", params: {} };
+    const cleanKey = apiKey ? apiKey.trim() : null;
+
+    if (!cleanKey || !cleanKey.startsWith('gsk_')) {
+        return { thought: "Geçersiz veya eksik Groq API Key!", action: "WAIT", params: {} };
     }
 
-    const groq = new Groq({ apiKey: apiKey });
+    // Zaman aşımı (timeout) eklenerek kilitlenme engellendi
+    const groq = new Groq({ 
+        apiKey: cleanKey,
+        timeout: 10000 
+    });
 
     const prompt = `
 Sen Minecraft'ta oynayan otonom bir botsun.
@@ -21,10 +27,12 @@ Son Eylemin: ${lastAction}
 SADECE geçerli bir JSON yanıtı ver:
 {
   "thought": "Düşüncen ve yapacağın hamlenin kısa açıklaması",
-  "action": "MOVE" | "TALK" | "WAIT",
+  "action": "MOVE" | "TALK" | "CRAFT" | "WAIT",
   "params": {
      "x": ${worldState.rawPos.x}, "y": ${worldState.rawPos.y}, "z": ${worldState.rawPos.z},
-     "message": "mesaj"
+     "message": "mesaj",
+     "item_name": "oak_planks",
+     "count": 1
   }
 }`;
 
@@ -38,7 +46,7 @@ SADECE geçerli bir JSON yanıtı ver:
         return JSON.parse(response.choices[0].message.content);
     } catch (err) {
         console.error("Groq API Hatası:", err.message);
-        return { thought: "Groq API Hatası: " + err.message, action: "WAIT", params: {} };
+        return { thought: `Groq Hatası (${err.message}) - Yeniden deneniyor...`, action: "WAIT", params: {} };
     }
 }
 
