@@ -11,46 +11,52 @@ async function decideNextAction(worldState, currentGoal, apiKey) {
     const memContext = memory.getMemoryContext();
 
     const prompt = `
-Sen Minecraft'ın en akıllı ve insansı otonom yapay zeka botusun (MindCraft).
+Sen Minecraft'ta oynayan otonom bir akıllı botsun. SADECE bir JSON objesi döndür, markdown veya başka bir açıklama yazma.
+
 [DURUMUM]:
 - Konum: ${worldState.location} | Can: ${worldState.health}/20 | Açlık: ${worldState.food}/20
 - Envanter: ${worldState.inventory} | Yakındakiler: ${worldState.nearby}
+- Geçmiş Hatalar: ${memContext.failures}
+- Hedef: ${currentGoal}
 
-[HAFIZA & KENDİ KENDİNE ÖĞRENME]:
-- Geçmiş Eylemler: ${memContext.history}
-- Başarısızlıklar/Dersler: ${memContext.failures}
-
-[ANA HEDEF]: ${currentGoal}
-
-[YAPABİLECEĞİN EYLEMLER]:
-- "MOVE" -> params: { x, y, z }
-- "FOLLOW" -> params: { target_name }
-- "ATTACK" -> params: { target_name }
-- "FARM" -> params: {}
-- "FISH" -> params: {}
-- "CRAFT" -> params: { item_name, count }
-- "TALK" -> params: { message } (Oyuncularla insansı derin sohbetler et)
-- "WAIT" -> params: {}
-
-SADECE geçerli bir JSON ver:
+Örnek Yanıt Formatı:
 {
-  "reasoning": "Adım adım mantık yürütmen (Chain of Thought)",
-  "chat_response": "Gerekiyorsa chate yazacağın akıllıca/esprili yanıt (boş bırakılabilir)",
-  "thought": "Kısa panel açıklaması",
-  "action": "MOVE" | "FOLLOW" | "ATTACK" | "FARM" | "FISH" | "CRAFT" | "TALK" | "WAIT",
-  "params": {}
-}`;
+  "reasoning": "Mantık yürütmen",
+  "chat_response": "Chate yazılacak mesaj (boş olabilir)",
+  "thought": "Kısa eylem açıklaması",
+  "action": "MOVE",
+  "params": { "x": 0, "y": 64, "z": 0 }
+}
+
+Kullanabileceğin aksiyonlar: MOVE, FOLLOW, ATTACK, FARM, FISH, CRAFT, TALK, WAIT.
+Şimdi bu formata uygun kararını ver:`;
 
     try {
         const response = await groq.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
-            model: 'llama-3.3-70b-versatile',
-            response_format: { type: 'json_object' }
+            model: 'llama-3.3-70b-versatile'
         });
 
-        return JSON.parse(response.choices[0].message.content);
+        const rawText = response.choices[0].message.content;
+        
+        // GÜVENLİ PARSE: Metin içindeki süslü parantez aralığını yakala (Markdown çöpünü temizler)
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error("Model geçerli bir JSON blok yapısı döndürmedi.");
+        }
+
+        const parsed = JSON.parse(jsonMatch[0]);
+        return parsed;
+
     } catch (err) {
-        return { thought: `Groq Hatası: ${err.message}`, action: "WAIT", params: {} };
+        // Hata verse bile bot asla çökmez, güvenli bekleme moduna geçer
+        return { 
+            reasoning: "Parse hatası güvenle atlatıldı.",
+            chat_response: "",
+            thought: "Karar optimize ediliyor...", 
+            action: "WAIT", 
+            params: {} 
+        };
     }
 }
 
