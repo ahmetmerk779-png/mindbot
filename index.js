@@ -20,6 +20,12 @@ process.on('uncaughtException', e => console.error(e));
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// 🎥 3D VIEWER ÖZEL ROTALARI (Sonsuz döngü engellendi)
+app.use('/prismarine-viewer', express.static(path.join(__dirname, 'node_modules/prismarine-viewer/public')));
+app.get('/view3d', (req, res) => {
+    res.sendFile(path.join(__dirname, 'node_modules/prismarine-viewer/public/index.html'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 let bot = null;
@@ -30,7 +36,18 @@ function log(text, type = 'info') {
     io.emit('log_message', { text, type, time: new Date().toLocaleTimeString() });
 }
 
-// 🌐 1 SANİYELİK CANLI DURUM YAYINI (Web Paneli İçin)
+// Oyundaki Master Oyuncunun Varlığını (Entity) Esnek Bulma
+function getMasterEntity(botInstance, masterUsername) {
+    if (!botInstance || !botInstance.players || !masterUsername) return null;
+    const keys = Object.keys(botInstance.players);
+    const matchKey = keys.find(k => k.toLowerCase() === masterUsername.toLowerCase());
+    if (matchKey && botInstance.players[matchKey] && botInstance.players[matchKey].entity) {
+        return botInstance.players[matchKey].entity;
+    }
+    return null;
+}
+
+// 🌐 1 SANİYELİK CANLI DURUM YAYINI
 setInterval(() => {
     if (bot && bot.entity) {
         const pos = bot.entity.position;
@@ -58,16 +75,21 @@ io.on('connection', (socket) => {
     socket.on('send_chat', (msg) => {
         if (bot) {
             bot.chat(msg);
-            log(`💬 [WEB TERMINAL -> OYUN]: ${msg}`, "info");
+            log(`💬 [WEB TERMINAL]: ${msg}`, "info");
+            
+            // Web Terminalden gelen komutları da doğrudan çalıştır
+            if (whisperCtrl) {
+                whisperCtrl.handleUniversalCommand(msg, getActionHandlers());
+            }
         } else {
-            log("❌ Bot oyunda değil, komut gönderilemedi!", "error");
+            log("❌ Bot oyunda değil!", "error");
         }
     });
 
     socket.on('start_bot_session', (config) => {
         if (bot) return log("Bot zaten aktif!", "error");
 
-        log(`AesirMC Proxy ve Tüm Sistemler Başlatılıyor (${config.host})...`, "info");
+        log(`AesirMC Proxy Başlatılıyor (${config.host})...`, "info");
 
         bot = mineflayer.createBot({
             host: config.host,
@@ -76,10 +98,7 @@ io.on('connection', (socket) => {
             version: config.version || '1.21.11'
         });
 
-        // Sohbet Mesajlarını Terminale Yazdır
-        bot.on('message', (jsonMsg) => {
-            log(jsonMsg.toString());
-        });
+        bot.on('message', (jsonMsg) => log(jsonMsg.toString()));
 
         captchaAuth = new CaptchaAndAuthHandler(bot, { password: config.password, subServer: config.subServer });
         captchaAuth.init();
@@ -90,16 +109,12 @@ io.on('connection', (socket) => {
         bot.once('spawn', () => {
             log("✅ Sunucuya Girildi! Tüm Modüller Aktif.", "info");
 
-            // 🎥 3D CANLI YAYIN MOTORU (WebGL)
+            // 3D VIEWER BAĞLANTISI
             try {
-                prismarineViewer(bot, {
-                    server: server,
-                    firstPerson: false, // 3. Şahıs Serbest Kamera
-                    viewDistance: 3      // RAM tasarruflu görüş alanı
-                });
-                log("🎥 [3D CANLI YAYIN]: 3D İzleme Ekranı Aktifleştirildi!", "info");
+                prismarineViewer(bot, { server: server, firstPerson: false, viewDistance: 3 });
+                log("🎥 [3D CANLI İZLEME]: 3D Ekran Aktifleştirildi!", "info");
             } catch (err) {
-                log(`3D Yayın Başlatılamadı: ${err.message}`, "error");
+                log(`3D Ekran Hatası: ${err.message}`, "error");
             }
 
             nav = new AdvancedPathfinder(bot);
@@ -113,8 +128,17 @@ io.on('connection', (socket) => {
 
             const masterUser = config.masterUser || 'OyundakiAdin';
             whisperCtrl = new NaturalWhisperController(bot, masterUser, config.groqKey);
+            whisperCtrl.init(getActionHandlers());
 
-            // Periyodik Zırh, Yemek ve Acil Kaçış Kontrolü
+            // GENEL SOHBETİ DE DİNLE (/msg ŞART DEĞİL)
+            bot.on('chat', (username, message) => {
+                if (username.toLowerCase() === masterUser.toLowerCase()) {
+                    log(`💬 [GENEL CHAT] <${username}>: ${message}`, "info");
+                    whisperCtrl.handleUniversalCommand(message, getActionHandlers());
+                }
+            });
+
+            // Periyodik Kontroller
             setInterval(async () => {
                 if (!bot || !bot.entity) return;
                 await toolEngine.autoEquipArmor();
@@ -122,42 +146,7 @@ io.on('connection', (socket) => {
                 toolEngine.checkEmergencyEscape();
             }, 2000);
 
-            // DOĞAL DİL ÖZEL MESAJ EYLEMLERİ
-            whisperCtrl.init({
-                FOLLOW: () => {
-                    const player = bot.players[masterUser.toLowerCase()]?.entity;
-                    if (player) { nav.followEntity(player, 2); currentActionText = `${masterUser} takip ediliyor.`; }
-                },
-                STOP: () => {
-                    nav.stop();
-                    if (combat) combat.stopCombat();
-                    currentActionText = "Durdu (Pasif Bekleme).";
-                },
-                NPC_CLICK: async (p) => {
-                    const res = await guiNpc.interactWithNPC(p.name || 'NPC', p.click_type || 'right');
-                    whisperCtrl.reply(res.message);
-                },
-                GUI_CLICK: async (p) => {
-                    const res = await guiNpc.clickCustomGUISlot(p.slot || 0, p.mouse_button || 0);
-                    whisperCtrl.reply(res.message);
-                },
-                CONTAINER: async (p) => {
-                    const res = await guiNpc.handleContainer(p.action || 'deposit', p.item_name || 'all');
-                    whisperCtrl.reply(res.message);
-                },
-                NETHER_PORTAL: async (p) => {
-                    const res = p.action === 'build' ? await portalHandler.buildAndIgnitePortal() : await portalHandler.enterExistingPortal();
-                    whisperCtrl.reply(res.message);
-                },
-                ESCAPE: () => {
-                    bot.chat('/spawn');
-                    whisperCtrl.reply("Güvenli bölgeye kaçış komutu verildi!");
-                },
-                STATUS: () => {},
-                CHAT: () => {}
-            });
-
-            currentActionText = `IDLE: ${masterUser} kişisinden /msg bekleniyor...`;
+            currentActionText = `IDLE: ${masterUser} oyuncusundan komut bekleniyor...`;
         });
 
         bot.on('error', err => log(`Hata: ${err.message}`, 'error'));
@@ -172,6 +161,60 @@ io.on('connection', (socket) => {
         log("Bot durduruldu.", "info");
     });
 });
+
+// TÜM EYLEMLERİN TANIMLANDIĞI MERKEZİ MERKEZ
+function getActionHandlers() {
+    return {
+        FOLLOW: () => {
+            const masterUser = whisperCtrl ? whisperCtrl.masterUsername : '';
+            const playerEntity = getMasterEntity(bot, masterUser);
+            if (playerEntity) {
+                nav.followEntity(playerEntity, 2);
+                currentActionText = `${masterUser} takip ediliyor.`;
+                if (whisperCtrl) whisperCtrl.reply("Yanına geliyorum usta!");
+            } else {
+                if (whisperCtrl) whisperCtrl.reply("Seni yakınımda göremiyorum! Görüş alanında mısın?");
+                currentActionText = "Takip Başarısız (Oyuncu uzakta).";
+            }
+        },
+        STOP: () => {
+            nav.stop();
+            if (combat) combat.stopCombat();
+            currentActionText = "Durdu (Pasif Bekleme).";
+            if (whisperCtrl) whisperCtrl.reply("Olduğum yerde durdum usta.");
+        },
+        ATTACK: (p) => {
+            const target = combat.getNearestHostile(12);
+            if (target) {
+                combat.startCombatLoop(target);
+                currentActionText = `Savaşta: ${target.name}`;
+                if (whisperCtrl) whisperCtrl.reply(`${target.name} hedefine saldırıyorum!`);
+            } else {
+                if (whisperCtrl) whisperCtrl.reply("Yakında saldırılacak yaratık bulunamadı.");
+            }
+        },
+        NPC_CLICK: async (p) => {
+            const res = await guiNpc.interactWithNPC(p.name || 'NPC', p.click_type || 'right');
+            if (whisperCtrl) whisperCtrl.reply(res.message);
+        },
+        GUI_CLICK: async (p) => {
+            const res = await guiNpc.clickCustomGUISlot(p.slot || 0, p.mouse_button || 0);
+            if (whisperCtrl) whisperCtrl.reply(res.message);
+        },
+        CONTAINER: async (p) => {
+            const res = await guiNpc.handleContainer(p.action || 'deposit', p.item_name || 'all');
+            if (whisperCtrl) whisperCtrl.reply(res.message);
+        },
+        NETHER_PORTAL: async (p) => {
+            const res = p.action === 'build' ? await portalHandler.buildAndIgnitePortal() : await portalHandler.enterExistingPortal();
+            if (whisperCtrl) whisperCtrl.reply(res.message);
+        },
+        ESCAPE: () => {
+            bot.chat('/spawn');
+            if (whisperCtrl) whisperCtrl.reply("Güvenli bölgeye kaçış yapıldı!");
+        }
+    };
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🚀 Pro Sunucu Aktif: ${PORT}`));
