@@ -4,8 +4,8 @@ const { Server } = require('socket.io');
 const path = require('path');
 const mineflayer = require('mineflayer');
 
-// DÜZELTME: initMovements eklendi
 const { setupPathfinder, initMovements, goToLocation } = require('./src/skills/movement');
+const { autoCraft } = require('./src/skills/crafting');
 const { getWorldState } = require('./src/perception');
 const { decideNextAction } = require('./src/brain');
 
@@ -51,7 +51,7 @@ io.on('connection', (socket) => {
 
     socket.on('start_bot_session', (config) => {
         if (bot) {
-            sendLog("Zaten çalışan bir bot var! Önce onu kapatın.", "error");
+            sendLog("Zaten çalışan bir bot var! Önce kapatın.", "error");
             return;
         }
 
@@ -68,19 +68,18 @@ io.on('connection', (socket) => {
                 physicsEnabled: true
             });
 
-            // Pathfinder eklentisini bağla
             setupPathfinder(bot);
 
             bot.once('spawn', async () => {
-                // DÜZELTME: Hareket haritası bot tam doğunca yüklenir
                 initMovements(bot);
 
-                sendLog("✅ Bot başarıyla oyuna girdi!", "info");
-                currentActionText = "Otonom yapay zeka döngüsü başlatılıyor...";
+                sendLog("✅ Bot oyuna girdi!", "info");
+                currentActionText = "Yapay zeka döngüsü başlatılıyor...";
 
-                let currentGoal = "Etrafta dolaş, oyuncuları gözlemle ve chate selam ver.";
+                let currentGoal = "Etrafta dolaş, oyuncularla konuş ve eşya üret.";
                 let lastAction = "Oyuna katıldı.";
 
+                // OTONOM DÖNGÜ (EYLEM YÖNETİCİSİ)
                 aiLoopInterval = setInterval(async () => {
                     if (!bot || !bot.entity) return;
 
@@ -88,17 +87,28 @@ io.on('connection', (socket) => {
                         const state = getWorldState(bot);
                         if (!state) return;
 
+                        // AI Karar Alıyor
                         const decision = await decideNextAction(state, currentGoal, lastAction, config.groqKey);
                         currentActionText = decision.thought;
                         lastAction = decision.thought;
                         sendLog(`AI Kararı: ${decision.thought}`, 'info');
 
+                        // 1. HAREKET EYLEMİ
                         if (decision.action === 'MOVE' && decision.params.x) {
                             const { x, y, z } = decision.params;
+                            sendLog(`Yürünüyor -> X:${x} Y:${y} Z:${z}`, 'info');
                             await goToLocation(bot, x, y, z);
-                        } else if (decision.action === 'TALK' && decision.params.message) {
+                        } 
+                        // 2. KONUŞMA EYLEMİ
+                        else if (decision.action === 'TALK' && decision.params.message) {
                             bot.chat(decision.params.message);
                         }
+                        // 3. CRAFTING EYLEMİ
+                        else if (decision.action === 'CRAFT' && decision.params.item_name) {
+                            const res = await autoCraft(bot, decision.params.item_name, decision.params.count || 1);
+                            sendLog(`Craft Sonucu: ${res.message}`, res.success ? 'info' : 'error');
+                        }
+
                     } catch (err) {
                         sendLog(`Döngü Hatası: ${err.message}`, 'error');
                     }
@@ -125,16 +135,12 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('stop_bot_session', () => {
-        stopBotSession();
-    });
+    socket.on('stop_bot_session', () => stopBotSession());
 
     socket.on('send_command', (msg) => {
         if (bot) {
             bot.chat(msg);
             sendLog(`[Panelden Gönderildi]: ${msg}`, 'chat');
-        } else {
-            sendLog("Bot oyunda değil, mesaj gönderilemez!", "error");
         }
     });
 
@@ -152,6 +158,4 @@ function stopBotSession() {
 }
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`🚀 Web Paneli Aktif: http://localhost:${PORT}`);
-});
+server.listen(PORT, () => console.log(`🚀 Web Paneli Aktif: ${PORT}`));
