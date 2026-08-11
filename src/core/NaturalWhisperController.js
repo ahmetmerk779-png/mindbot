@@ -26,10 +26,8 @@ class NaturalWhisperController {
                     const message = match[2].trim();
 
                     if (sender.toLowerCase() === this.masterUsername) {
-                        console.log(`💬 [MESAJ]: <${sender}> -> ${message}`);
-                        await this.processNaturalLanguage(message, actionHandlers);
-                    } else {
-                        console.warn(`⛔ [YETKİSİZ ENGEL]: <${sender}> -> ${message}`);
+                        console.log(`💬 [GELEN MSG] <${sender}>: ${message}`);
+                        await this.handleUniversalCommand(message, actionHandlers);
                     }
                     break;
                 }
@@ -38,51 +36,62 @@ class NaturalWhisperController {
     }
 
     reply(text) {
-        this.bot.chat(`/msg ${this.masterUsername} ${text}`);
+        if (this.bot) {
+            this.bot.chat(`/msg ${this.masterUsername} ${text}`);
+        }
     }
 
-    async processNaturalLanguage(userMessage, actionHandlers) {
-        if (!this.groq) {
-            this.reply("Groq API Key tanımlanmadığı için ne dediğini anlayamıyorum!");
+    // HER YERDEN GELEN KOMUTLARI ANINDA İŞLEYEN MOTOR
+    async handleUniversalCommand(rawMessage, actionHandlers) {
+        const text = rawMessage.toLowerCase().trim();
+
+        // 1. ANLIK HIZLI KELİME YAKALAYICI (Gecikmesiz Mantık)
+        if (text.includes('takip') || text.includes('gel') || text.includes('koş') || text.includes('yanıma')) {
+            if (actionHandlers.FOLLOW) actionHandlers.FOLLOW();
+            return;
+        }
+        if (text.includes('dur') || text.includes('bekle') || text.includes('sakin') || text.includes('kımıldama')) {
+            if (actionHandlers.STOP) actionHandlers.STOP();
+            return;
+        }
+        if (text.includes('saldır') || text.includes('kes') || text.includes('öldür') || text.includes('vur')) {
+            if (actionHandlers.ATTACK) actionHandlers.ATTACK({ target: 'mob' });
+            return;
+        }
+        if (text.includes('spawn') || text.includes('kaç')) {
+            if (actionHandlers.ESCAPE) actionHandlers.ESCAPE();
+            return;
+        }
+        if (text.includes('portal') || text.includes('nether')) {
+            if (actionHandlers.NETHER_PORTAL) actionHandlers.NETHER_PORTAL({ action: text.includes('yap') ? 'build' : 'enter' });
+            return;
+        }
+        if (text.includes('sandık') || text.includes('shulker') || text.includes('depola')) {
+            if (actionHandlers.CONTAINER) actionHandlers.CONTAINER({ action: 'deposit', item_name: 'all' });
+            return;
+        }
+        if (text.includes('npc') || text.includes('tıkla')) {
+            if (actionHandlers.NPC_CLICK) actionHandlers.NPC_CLICK({ name: 'NPC', click_type: 'right' });
             return;
         }
 
-        const prompt = `
-Sen Minecraft'ta sahibine hizmet eden sadık bir botsun. Sahibin özel mesajdan (${userMessage}) yazdı.
-GÖREVİN: Sahibinin Türkçe cümlesinin amacını anla ve SADECE JSON döndür.
+        // 2. GROQ AI FALLBACK (Karmaşık Cümleler İçin)
+        if (this.groq) {
+            try {
+                const response = await this.groq.chat.completions.create({
+                    messages: [{
+                        role: 'user',
+                        content: `Cümle: "${rawMessage}". Niyeti bul ve JSON döndür: {"intent": "FOLLOW"|"STOP"|"ATTACK"|"ESCAPE"|"NPC_CLICK"|"CONTAINER"|"NETHER_PORTAL"}`
+                    }],
+                    model: 'llama-3.3-70b-versatile',
+                    response_format: { type: "json_object" }
+                });
 
-NİYETLER (intent):
-- "FOLLOW": Yanına gelmesini/takip etmesini istiyor.
-- "STOP": Durmasını istiyor.
-- "NPC_CLICK": NPC'ye tıklamasını istiyor (params: { name, click_type: "right" | "left" }).
-- "GUI_CLICK": Menüde slota tıklamasını istiyor (params: { slot, mouse_button: 0 | 1 }).
-- "CONTAINER": Sandığa/Shulker'a eşya koymasını veya almasını istiyor (params: { action: "deposit" | "withdraw", item_name: "all" }).
-- "NETHER_PORTAL": Nether portalı yapmasını/yakmasını veya girmesini istiyor (params: { action: "build" | "enter" }).
-- "STATUS": Durum soruyor.
-- "ESCAPE": Kaçmasını/spawn'a gitmesini istiyor.
-- "CHAT": Sohbet ediyor.
-
-JSON ÇIKTI:
-{
-  "intent": "FOLLOW" | "STOP" | "NPC_CLICK" | "GUI_CLICK" | "CONTAINER" | "NETHER_PORTAL" | "STATUS" | "ESCAPE" | "CHAT",
-  "params": {},
-  "reply": "Sahibine /msg ile atılacak insansı Türkçe cevap"
-}`;
-
-        try {
-            const response = await this.groq.chat.completions.create({
-                messages: [{ role: 'user', content: prompt }],
-                model: 'llama-3.3-70b-versatile',
-                response_format: { type: "json_object" }
-            });
-
-            const parsed = JSON.parse(response.data.choices[0].message.content);
-
-            if (parsed.reply) this.reply(parsed.reply);
-            if (actionHandlers[parsed.intent]) actionHandlers[parsed.intent](parsed.params);
-
-        } catch (err) {
-            this.reply("Anlayamadım usta, ne yapmamı istiyorsun?");
+                const parsed = JSON.parse(response.data.choices[0].message.content);
+                if (parsed.intent && actionHandlers[parsed.intent]) {
+                    actionHandlers[parsed.intent]({});
+                }
+            } catch (e) {}
         }
     }
 }
