@@ -2,17 +2,34 @@ const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const { GoalBlock } = goals;
 
 function setupPathfinder(bot) {
+    // Sadece eklentiyi bota bağla
     bot.loadPlugin(pathfinder);
-    const mcData = require('minecraft-data')(bot.version);
-    const defaultMove = new Movements(bot, mcData);
-    
-    defaultMove.canDig = false; // RAM tasarrufu için blok kazmayı kısıtla
-    defaultMove.allowParkour = true;
-    bot.pathfinder.setMovements(defaultMove);
+}
+
+function initMovements(bot) {
+    // Sürüm ve harita verilerini bot spawn olduktan sonra yükle
+    try {
+        const mcData = require('minecraft-data')(bot.version);
+        if (!mcData) return;
+
+        const defaultMove = new Movements(bot, mcData);
+        defaultMove.canDig = false; // RAM ve performans için kazmayı kapat
+        defaultMove.allowParkour = true;
+
+        if (bot.pathfinder) {
+            bot.pathfinder.setMovements(defaultMove);
+        }
+    } catch (err) {
+        console.error("Movements yükleme hatası:", err.message);
+    }
 }
 
 function goToLocation(bot, x, y, z) {
     return new Promise((resolve) => {
+        if (!bot.pathfinder) {
+            return resolve({ success: false, message: 'Pathfinder henüz hazır değil.' });
+        }
+
         const goal = new GoalBlock(x, y, z);
         bot.pathfinder.setGoal(goal);
 
@@ -36,4 +53,4 @@ function goToLocation(bot, x, y, z) {
     });
 }
 
-module.exports = { setupPathfinder, goToLocation };
+module.exports = { setupPathfinder, initMovements, goToLocation };
