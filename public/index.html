@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MindCraft Ultimate Kontrol Paneli</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <title>MindCraft Panel</title>
+    <script src="/panel-socket/socket.io.js"></script>
     <style>
         body { font-family: sans-serif; background: #0f0f17; color: #cdd6f4; padding: 15px; margin: 0; }
         .card { background: #1e1e2e; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #313244; }
@@ -13,82 +13,59 @@
         input { padding: 8px; background: #313244; border: 1px solid #45475a; color: white; border-radius: 4px; width: 90%; }
         button { padding: 10px 20px; background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         .btn-stop { background: #f38ba8; color: white; margin-left: 10px; }
-        
-        .viewer-container {
-            position: relative;
-            width: 100%;
-            height: 380px;
-            background: #11111b;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 2px solid #89b4fa;
-        }
-        iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-        .term-input-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        .term-input-group input {
-            flex: 1;
-            width: auto;
-        }
+        .viewer-container { width: 100%; height: 380px; background: #11111b; border-radius: 8px; overflow: hidden; border: 2px solid #89b4fa; }
+        iframe { width: 100%; height: 100%; border: none; }
+        .term-input-group { display: flex; gap: 10px; margin-top: 10px; }
+        .term-input-group input { flex: 1; width: auto; }
     </style>
 </head>
 <body>
-    <h2>⚡ MindCraft Ultimate AesirMC / Proxy Paneli</h2>
+    <h2>⚡ MindCraft Paneli</h2>
     
     <div class="card">
         <div class="grid">
             <div><label>Sunucu IP:</label><br><input type="text" id="cfgHost" value="oyna.aesirmc.com"></div>
             <div><label>Port:</label><br><input type="number" id="cfgPort" value="25565"></div>
             <div><label>Bot Adı:</label><br><input type="text" id="cfgUser" value="banyedin"></div>
-            <div><label>Şifre (Oto-Login):</label><br><input type="password" id="cfgPass" placeholder="Şifreniz"></div>
-            <div><label>Senin Oyundaki Adın (Master):</label><br><input type="text" id="cfgMaster" placeholder="Master Oyuncu Adın"></div>
+            <div><label>Şifre:</label><br><input type="password" id="cfgPass" placeholder="Şifreniz"></div>
+            <div><label>Master Adın:</label><br><input type="text" id="cfgMaster" placeholder="Oyuncu Adın"></div>
             <div><label>Hedef Sunucu:</label><br><input type="text" id="cfgSub" value="Towny"></div>
         </div><br>
-        <div><label>Groq API Key (Doğal Dil):</label><br><input type="password" id="cfgGroq" placeholder="gsk_..." style="width: 95%;"></div><br>
-        <button onclick="startBot()">🚀 Botu Güvenli Başlat</button>
+        <div><label>Groq API:</label><br><input type="password" id="cfgGroq" style="width: 95%;"></div><br>
+        <button onclick="startBot()">🚀 Başlat</button>
         <button onclick="stopBot()" class="btn-stop">🔴 Durdur</button>
     </div>
 
     <div class="card">
-        <p>Durum: <b id="status" style="color:#f38ba8">Kapalı</b> | Can: <b id="hp" style="color:#a6e3a1">20</b> | Açlık: <b id="food" style="color:#fab387">20</b> | Konum: <b id="pos" style="color:#89b4fa">X:0 Y:0 Z:0</b></p>
-        <p>Eylem: <span id="action" style="color:#f9e2af">Pasif Beklemede</span></p>
+        <p>Durum: <b id="status" style="color:#f38ba8">Kapalı</b> | Konum: <b id="pos" style="color:#89b4fa">X:0 Y:0 Z:0</b></p>
+        <p>Eylem: <span id="action" style="color:#f9e2af">Pasif</span></p>
     </div>
 
-    <!-- 🎥 DÜZELTİLMİŞ 3D CANLI İZLEME EKRANI -->
     <div class="card">
-        <h3>🎥 Canlı 3D WebGL İzleme Ekranı (Real-Time)</h3>
+        <h3>🎥 Canlı 3D Ekran</h3>
         <div class="viewer-container">
             <iframe id="viewerFrame" src="about:blank"></iframe>
         </div>
     </div>
 
     <div class="card">
-        <h3>💬 Canlı Konsol Terminali & Komut Gönderici</h3>
+        <h3>💬 Terminal</h3>
         <div id="terminal"></div>
         <div class="term-input-group">
-            <input type="text" id="cmdInput" placeholder="Oyuna mesaj yaz (Örn: gel, takip et, dur, /tpa adin)..." onkeypress="if(event.key==='Enter') sendCmd()">
+            <input type="text" id="cmdInput" placeholder="Komut (gel, dur, /spawn)..." onkeypress="if(event.key==='Enter') sendCmd()">
             <button onclick="sendCmd()">Gönder</button>
         </div>
     </div>
 
     <script>
-        const socket = io();
+        const socket = io({ path: '/panel-socket' });
 
         document.addEventListener('DOMContentLoaded', () => {
             if(localStorage.getItem('cfgHost')) document.getElementById('cfgHost').value = localStorage.getItem('cfgHost');
-            if(localStorage.getItem('cfgPort')) document.getElementById('cfgPort').value = localStorage.getItem('cfgPort');
             if(localStorage.getItem('cfgUser')) document.getElementById('cfgUser').value = localStorage.getItem('cfgUser');
             if(localStorage.getItem('cfgPass')) document.getElementById('cfgPass').value = localStorage.getItem('cfgPass');
             if(localStorage.getItem('cfgMaster')) document.getElementById('cfgMaster').value = localStorage.getItem('cfgMaster');
             if(localStorage.getItem('cfgSub')) document.getElementById('cfgSub').value = localStorage.getItem('cfgSub');
-            if(localStorage.getItem('cfgGroq')) document.getElementById('cfgGroq').value = localStorage.getItem('cfgGroq');
         });
 
         function startBot() {
@@ -103,19 +80,17 @@
             };
 
             localStorage.setItem('cfgHost', config.host);
-            localStorage.setItem('cfgPort', config.port);
             localStorage.setItem('cfgUser', config.username);
             localStorage.setItem('cfgPass', config.password);
             localStorage.setItem('cfgMaster', config.masterUser);
             localStorage.setItem('cfgSub', config.subServer);
-            localStorage.setItem('cfgGroq', config.groqKey);
 
             socket.emit('start_bot_session', config);
 
-            // 3D VIEWER'I YÜKLE
+            // 3D ekranı kök adresten çağırıyoruz
             setTimeout(() => {
                 document.getElementById('viewerFrame').src = '/';
-            }, 3500);
+            }, 4000);
         }
 
         function stopBot() {
@@ -134,8 +109,6 @@
         socket.on('bot_status', d => {
             document.getElementById('status').innerText = d.connected ? 'Oyunda ✅' : 'Kapalı ❌';
             document.getElementById('status').style.color = d.connected ? '#a6e3a1' : '#f38ba8';
-            document.getElementById('hp').innerText = d.health;
-            document.getElementById('food').innerText = d.food;
             document.getElementById('pos').innerText = d.location;
             document.getElementById('action').innerText = d.action;
         });
@@ -147,4 +120,4 @@
         });
     </script>
 </body>
-    </html>
+</html>
