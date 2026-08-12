@@ -14,18 +14,13 @@ const AdvancedPathfinder = require('./src/core/AdvancedPathfinder');
 const RealCombat = require('./src/engines/RealCombat');
 const ToolAndEmergencyEngine = require('./src/engines/ToolAndEmergencyEngine');
 
-process.on('unhandledRejection', r => console.error(r));
-process.on('uncaughtException', e => console.error(e));
+process.on('unhandledRejection', r => console.error("Unhandled:", r));
+process.on('uncaughtException', e => console.error("Uncaught:", e));
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// 🎥 3D VIEWER ÖZEL ROTALARI (Sonsuz döngü engellendi)
-app.use('/prismarine-viewer', express.static(path.join(__dirname, 'node_modules/prismarine-viewer/public')));
-app.get('/view3d', (req, res) => {
-    res.sendFile(path.join(__dirname, 'node_modules/prismarine-viewer/public/index.html'));
-});
 app.use(express.static(path.join(__dirname, 'public')));
 
 let bot = null;
@@ -36,7 +31,7 @@ function log(text, type = 'info') {
     io.emit('log_message', { text, type, time: new Date().toLocaleTimeString() });
 }
 
-// Oyundaki Master Oyuncunun Varlığını (Entity) Esnek Bulma
+// Master Oyuncunun Varlığını Esnek Bulma
 function getMasterEntity(botInstance, masterUsername) {
     if (!botInstance || !botInstance.players || !masterUsername) return null;
     const keys = Object.keys(botInstance.players);
@@ -47,7 +42,7 @@ function getMasterEntity(botInstance, masterUsername) {
     return null;
 }
 
-// 🌐 1 SANİYELİK CANLI DURUM YAYINI
+// CANLI DURUM YAYINI
 setInterval(() => {
     if (bot && bot.entity) {
         const pos = bot.entity.position;
@@ -71,16 +66,11 @@ setInterval(() => {
 
 io.on('connection', (socket) => {
 
-    // WEB TERMINALINDEN OYUNA MESAJ/KOMUT GÖNDERME
     socket.on('send_chat', (msg) => {
         if (bot) {
             bot.chat(msg);
             log(`💬 [WEB TERMINAL]: ${msg}`, "info");
-            
-            // Web Terminalden gelen komutları da doğrudan çalıştır
-            if (whisperCtrl) {
-                whisperCtrl.handleUniversalCommand(msg, getActionHandlers());
-            }
+            if (whisperCtrl) whisperCtrl.handleUniversalCommand(msg, getActionHandlers());
         } else {
             log("❌ Bot oyunda değil!", "error");
         }
@@ -100,6 +90,16 @@ io.on('connection', (socket) => {
 
         bot.on('message', (jsonMsg) => log(jsonMsg.toString()));
 
+        // TPA VE ISINLANMA ISTEKLERINI OTOMATIK KABUL ETME
+        bot.on('message', (jsonMsg) => {
+            const txt = jsonMsg.toString();
+            const masterUser = config.masterUser || '';
+            if ((txt.includes('tp') || txt.includes('ışınlanma')) && txt.toLowerCase().includes(masterUser.toLowerCase())) {
+                log("📌 Master oyuncudan TPA isteği algılandı, kabul ediliyor...", "info");
+                setTimeout(() => bot.chat('/tpaccept'), 1000);
+            }
+        });
+
         captchaAuth = new CaptchaAndAuthHandler(bot, { password: config.password, subServer: config.subServer });
         captchaAuth.init();
 
@@ -107,12 +107,12 @@ io.on('connection', (socket) => {
         proxy.init();
 
         bot.once('spawn', () => {
-            log("✅ Sunucuya Girildi! Tüm Modüller Aktif.", "info");
+            log("✅ Sunucuya Girildi! 3D Yayın ve Modüller Aktif.", "info");
 
-            // 3D VIEWER BAĞLANTISI
+            // 🎥 3D VIEWER'I DOĞRUDAN EXPRESS APP'E ENJEKTE ET
             try {
-                prismarineViewer(bot, { server: server, firstPerson: false, viewDistance: 3 });
-                log("🎥 [3D CANLI İZLEME]: 3D Ekran Aktifleştirildi!", "info");
+                prismarineViewer(bot, { port: 3000, express: app, viewDistance: 3 });
+                log("🎥 [3D CANLI İZLEME]: 3D WebGL Yayın Sunucusu Aktif!", "info");
             } catch (err) {
                 log(`3D Ekran Hatası: ${err.message}`, "error");
             }
@@ -130,7 +130,6 @@ io.on('connection', (socket) => {
             whisperCtrl = new NaturalWhisperController(bot, masterUser, config.groqKey);
             whisperCtrl.init(getActionHandlers());
 
-            // GENEL SOHBETİ DE DİNLE (/msg ŞART DEĞİL)
             bot.on('chat', (username, message) => {
                 if (username.toLowerCase() === masterUser.toLowerCase()) {
                     log(`💬 [GENEL CHAT] <${username}>: ${message}`, "info");
@@ -138,7 +137,14 @@ io.on('connection', (socket) => {
                 }
             });
 
-            // Periyodik Kontroller
+            // Alt sunucu değiştiğinde (respawn) Pathfinder'ı tekrar bağla
+            bot.on('respawn', () => {
+                log("🔄 Sub-server değişti, Navigasyon ve Fizik tekrar güncelleniyor...", "info");
+                setTimeout(() => {
+                    if (nav) nav.init();
+                }, 2000);
+            });
+
             setInterval(async () => {
                 if (!bot || !bot.entity) return;
                 await toolEngine.autoEquipArmor();
@@ -146,7 +152,7 @@ io.on('connection', (socket) => {
                 toolEngine.checkEmergencyEscape();
             }, 2000);
 
-            currentActionText = `IDLE: ${masterUser} oyuncusundan komut bekleniyor...`;
+            currentActionText = `IDLE: ${masterUser} kişisinden komut bekleniyor...`;
         });
 
         bot.on('error', err => log(`Hata: ${err.message}`, 'error'));
@@ -162,7 +168,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// TÜM EYLEMLERİN TANIMLANDIĞI MERKEZİ MERKEZ
 function getActionHandlers() {
     return {
         FOLLOW: () => {
@@ -173,8 +178,8 @@ function getActionHandlers() {
                 currentActionText = `${masterUser} takip ediliyor.`;
                 if (whisperCtrl) whisperCtrl.reply("Yanına geliyorum usta!");
             } else {
-                if (whisperCtrl) whisperCtrl.reply("Seni yakınımda göremiyorum! Görüş alanında mısın?");
-                currentActionText = "Takip Başarısız (Oyuncu uzakta).";
+                if (whisperCtrl) whisperCtrl.reply("Görüş alanımda değilsin usta! Bana /tpa at, kabul edeyim veya yanıma yaklaş.");
+                currentActionText = "Takip Beklemede (Oyuncu Görüş Alanı Dışında).";
             }
         },
         STOP: () => {
