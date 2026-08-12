@@ -14,7 +14,6 @@
         button { padding: 10px 20px; background: #a6e3a1; color: #11111b; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
         .btn-stop { background: #f38ba8; color: white; margin-left: 10px; }
         
-        /* 🎥 ÇALIŞAN 3D CANLI YAYIN PENCERESİ */
         .viewer-container {
             position: relative;
             width: 100%;
@@ -43,7 +42,6 @@
 <body>
     <h2>⚡ MindCraft Ultimate AesirMC / Proxy Paneli</h2>
     
-    <!-- AYARLAR FORMU -->
     <div class="card">
         <div class="grid">
             <div><label>Sunucu IP:</label><br><input type="text" id="cfgHost" value="oyna.aesirmc.com"></div>
@@ -58,7 +56,6 @@
         <button onclick="stopBot()" class="btn-stop">🔴 Durdur</button>
     </div>
 
-    <!-- DURUM ÇUBUĞU -->
     <div class="card">
         <p>Durum: <b id="status" style="color:#f38ba8">Kapalı</b> | Can: <b id="hp" style="color:#a6e3a1">20</b> | Açlık: <b id="food" style="color:#fab387">20</b> | Konum: <b id="pos" style="color:#89b4fa">X:0 Y:0 Z:0</b></p>
         <p>Eylem: <span id="action" style="color:#f9e2af">Pasif Beklemede</span></p>
@@ -72,12 +69,11 @@
         </div>
     </div>
 
-    <!-- 💬 İNTERAKTİF TERMINAL -->
     <div class="card">
         <h3>💬 Canlı Konsol Terminali & Komut Gönderici</h3>
         <div id="terminal"></div>
         <div class="term-input-group">
-            <input type="text" id="cmdInput" placeholder="Oyuna komut veya mesaj yaz (Örn: gel, takip et, dur, /server towny)..." onkeypress="if(event.key==='Enter') sendCmd()">
+            <input type="text" id="cmdInput" placeholder="Oyuna mesaj yaz (Örn: gel, takip et, dur, /tpa adin)..." onkeypress="if(event.key==='Enter') sendCmd()">
             <button onclick="sendCmd()">Gönder</button>
         </div>
     </div>
@@ -85,7 +81,6 @@
     <script>
         const socket = io();
 
-        // KAYITLI VERİLERİ DOLDUR
         document.addEventListener('DOMContentLoaded', () => {
             if(localStorage.getItem('cfgHost')) document.getElementById('cfgHost').value = localStorage.getItem('cfgHost');
             if(localStorage.getItem('cfgPort')) document.getElementById('cfgPort').value = localStorage.getItem('cfgPort');
@@ -117,10 +112,10 @@
 
             socket.emit('start_bot_session', config);
 
-            // DÜZELTME: /view3d özel rotası yükleniyor (Sonsuz döngü engellendi)
+            // 3D VIEWER'I YÜKLE
             setTimeout(() => {
-                document.getElementById('viewerFrame').src = '/view3d';
-            }, 3000);
+                document.getElementById('viewerFrame').src = '/';
+            }, 3500);
         }
 
         function stopBot() {
@@ -152,4 +147,4 @@
         });
     </script>
 </body>
-</html>
+    </html>
