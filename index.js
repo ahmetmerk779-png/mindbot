@@ -20,10 +20,8 @@ process.on('uncaughtException', e => console.error("Uncaught:", e));
 const app = express();
 const server = http.createServer(app);
 
-// Panel soketini ayırdık, 3D ekranla çakışmaz
 const io = new Server(server, { path: '/panel-socket' });
 
-// Paneli /panel rotasına aldık
 app.get('/panel', (req, res) => {
     res.sendFile(path.join(__dirname, 'public/index.html'));
 });
@@ -37,14 +35,30 @@ function log(text, type = 'info') {
     io.emit('log_message', { text, type, time: new Date().toLocaleTimeString() });
 }
 
+// HASSAS OYUNCI TESPİTİ (Hologram ve NPC'leri eler)
 function getMasterEntity(botInstance, masterUsername) {
-    if (!botInstance || !botInstance.players || !masterUsername) return null;
-    const keys = Object.keys(botInstance.players);
-    const matchKey = keys.find(k => k.toLowerCase() === masterUsername.toLowerCase());
-    if (matchKey && botInstance.players[matchKey] && botInstance.players[matchKey].entity) {
-        return botInstance.players[matchKey].entity;
+    if (!botInstance || !botInstance.entities) return null;
+    
+    const masterLower = (masterUsername || '').toLowerCase();
+
+    // 1. İsmi tam eşleşen gerçek oyuncuyu bul
+    for (const id in botInstance.entities) {
+        const e = botInstance.entities[id];
+        if (e && e.type === 'player' && e.username) {
+            if (e.username.toLowerCase() === masterLower && e.username !== botInstance.username) {
+                return e;
+            }
+        }
     }
-    return null;
+
+    // 2. İsmi bulamazsa yakındaki en yakın gerçek oyuncuya kilitlen
+    return botInstance.nearestEntity(e => {
+        return e.type === 'player' && 
+               e.username && 
+               e.username !== botInstance.username &&
+               !e.username.includes('NPC') &&
+               !e.username.includes('CITIZEN');
+    });
 }
 
 setInterval(() => {
@@ -83,14 +97,6 @@ io.on('connection', (socket) => {
 
         bot.on('message', (jsonMsg) => log(jsonMsg.toString()));
 
-        // TPA Otomatik Kabul
-        bot.on('message', (jsonMsg) => {
-            const txt = jsonMsg.toString().toLowerCase();
-            if (txt.includes('tp') || txt.includes('ışınlanma')) {
-                setTimeout(() => bot.chat('/tpaccept'), 1000);
-            }
-        });
-
         captchaAuth = new CaptchaAndAuthHandler(bot, { password: config.password, subServer: config.subServer });
         captchaAuth.init();
 
@@ -100,7 +106,6 @@ io.on('connection', (socket) => {
         bot.once('spawn', () => {
             log("✅ Sunucuya Girildi!", "info");
 
-            // 3D Ekranı kök dizine (/) bağlıyoruz
             try {
                 prismarineViewer(bot, { server: server, viewDistance: 3 });
                 log("🎥 3D Ekran Aktif!", "info");
@@ -117,7 +122,7 @@ io.on('connection', (socket) => {
 
             captchaAuth.reconnectToLastServer();
 
-            const masterUser = config.masterUser || 'OyundakiAdin';
+            const masterUser = config.masterUser || 'Mahmutcanmerk12';
             whisperCtrl = new NaturalWhisperController(bot, masterUser, config.groqKey);
             whisperCtrl.init(getActionHandlers());
 
@@ -143,24 +148,20 @@ function getActionHandlers() {
     return {
         FOLLOW: () => {
             const masterUser = whisperCtrl ? whisperCtrl.masterUsername : '';
-            let playerEntity = getMasterEntity(bot, masterUser);
-            
-            // Isim uyuşmazsa etraftaki en yakın oyuncuyu bulup takip eder
-            if (!playerEntity) {
-                playerEntity = bot.nearestEntity(e => e.type === 'player' && e.username !== bot.username);
-            }
+            const playerEntity = getMasterEntity(bot, masterUser);
 
             if (playerEntity) {
                 nav.followEntity(playerEntity, 2);
-                currentActionText = `${playerEntity.username} takip ediliyor.`;
-                if (whisperCtrl) whisperCtrl.reply(`Seni gördüm ${playerEntity.username}, geliyorum!`);
+                currentActionText = `${playerEntity.username || masterUser} takip ediliyor.`;
+                if (whisperCtrl) whisperCtrl.reply(`Seni gördüm ${playerEntity.username || masterUser}, geliyorum!`);
             } else {
-                if (whisperCtrl) whisperCtrl.reply("Görüş alanımda oyuncu yok! Yaklaş veya /tpa at.");
+                if (whisperCtrl) whisperCtrl.reply("Etrafımda kimseyi göremiyorum! Yaklaşıp tekrar dene.");
             }
         },
         STOP: () => {
             nav.stop();
             currentActionText = "Durdu.";
+            if (whisperCtrl) whisperCtrl.reply("Duruyorum usta.");
         },
         ATTACK: () => {
             const target = combat.getNearestHostile(12);
